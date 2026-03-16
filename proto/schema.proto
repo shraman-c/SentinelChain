@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package sentinelchain;
+
+option go_package = "sentinelchain/pkg/pb";
+
+service LogService {
+    rpc SubmitLog(LogRequest) returns (LogResponse);
+    rpc StreamLogs(stream LogRequest) returns (LogResponse);
+}
+
+message LogRequest {
+    int64 timestamp = 1;
+    string source_ip = 2;
+    string event_type = 3;
+    string severity = 4;
+    string message = 5;
+}
+
+message LogResponse {
+    bool success = 1;
+    string hash = 2;
+    string message = 3;
+}
+
+service IntegrityService {
+    rpc WatchIntegrity(Empty) returns (stream TamperAlert);
+}
+
+message Empty {}
+
+message TamperAlert {
+    int64 detected_at = 1;
+    int64 tampered_block_id = 2;
+    string details = 3;
+}
