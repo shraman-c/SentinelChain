@@ -1,8 +1,13 @@
-name = "sentinelchain-worker"
-main = "worker/index.ts"
+name = "sentinelchain"
 compatibility_date = "2024-01-01"
+
+[env.production]
+name = "sentinelchain"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "sentinelchain-db"
 database_id = "0c56ddf8-28bd-4be5-88e0-a3c75811753c"
+
+[site]
+bucket = "dist"
