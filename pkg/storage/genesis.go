@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -17,10 +15,6 @@ func (db *DB) InitGenesisBlock() error {
 		return nil
 	}
 
-	genesisData := fmt.Sprintf("0%sGENESIS%s%sGenesis Block", GenesisPrevHash, "INIT", "INFO")
-	genesisHash := sha256.Sum256([]byte(genesisData))
-	genesisHashStr := hex.EncodeToString(genesisHash[:])
-
 	genesisBlock := &Block{
 		LogTimestamp: 0,
 		SourceIP:     "0.0.0.0",
@@ -28,9 +22,16 @@ func (db *DB) InitGenesisBlock() error {
 		Severity:     "INFO",
 		Message:      "Genesis Block",
 		PrevHash:     GenesisPrevHash,
-		Hash:         genesisHashStr,
 		InsertedAt:   time.Now().UnixNano(),
 	}
+	genesisBlock.Hash = ComputeHash(
+		genesisBlock.LogTimestamp,
+		genesisBlock.SourceIP,
+		genesisBlock.EventType,
+		genesisBlock.Severity,
+		genesisBlock.Message,
+		genesisBlock.PrevHash,
+	)
 
 	_, err = db.conn.Exec(`
 		INSERT INTO blocks (log_timestamp, source_ip, event_type, severity, message, prev_hash, hash, inserted_at)
