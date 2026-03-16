@@ -1,6 +1,10 @@
 name = "sentinelchain-worker"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
+pages_build_output_dir = "frontend/dist"
+
+[build]
+command = "cd frontend && npm install && npm run build"
 
 [[d1_databases]]
 binding = "DB"
