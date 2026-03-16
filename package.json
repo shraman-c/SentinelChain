@@ -3,5 +3,8 @@
   "private": true,
   "scripts": {
     "build": "cd frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20260316.1"
   }
 }

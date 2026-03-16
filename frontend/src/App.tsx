@@ -1,19 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import './index.css'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
-const WS_URL = import.meta.env.VITE_WS_URL || ''
-
-function getWsUrl() {
-  if (WS_URL) return WS_URL
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/alerts`
-}
 
 function getApiUrl() {
   if (API_BASE) return API_BASE
-  const protocol = window.location.protocol
-  return `${protocol}//${window.location.host}`
+  return window.location.origin
 }
 
 interface LogEntry {
@@ -26,67 +18,9 @@ interface LogEntry {
   hash: string
 }
 
-interface TamperAlert {
-  detected_at: number
-  tampered_block_id: number
-  details: string
-}
-
 function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
-  const [alerts, setAlerts] = useState<TamperAlert[]>([])
-  const [connected, setConnected] = useState(false)
-  const [lastAlert, setLastAlert] = useState<TamperAlert | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
-  const pollIntervalRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const wsUrl = getWsUrl()
-    
-    const connectWebSocket = () => {
-      try {
-        const ws = new WebSocket(wsUrl)
-        
-        ws.onopen = () => {
-          console.log('WebSocket connected')
-          setConnected(true)
-        }
-        
-        ws.onmessage = (event) => {
-          try {
-            const alert = JSON.parse(event.data) as TamperAlert
-            setAlerts(prev => [...prev.slice(-9), alert])
-            setLastAlert(alert)
-          } catch (err) {
-            console.error('Failed to parse alert:', err)
-          }
-        }
-        
-        ws.onclose = () => {
-          console.log('WebSocket disconnected')
-          setConnected(false)
-          setTimeout(connectWebSocket, 3000)
-        }
-        
-        ws.onerror = (err) => {
-          console.error('WebSocket error:', err)
-        }
-        
-        wsRef.current = ws
-      } catch (err) {
-        console.error('WebSocket connection failed:', err)
-        setTimeout(connectWebSocket, 3000)
-      }
-    }
-
-    connectWebSocket()
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-    }
-  }, [])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -99,17 +33,14 @@ function App() {
         }
       } catch (err) {
         console.error('Failed to fetch logs:', err)
+      } finally {
+        setLoading(false)
       }
     }
 
     fetchLogs()
-    pollIntervalRef.current = window.setInterval(fetchLogs, 2000)
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-      }
-    }
+    const interval = setInterval(fetchLogs, 2000)
+    return () => clearInterval(interval)
   }, [])
 
   const getSeverityColor = (severity: string) => {
@@ -122,8 +53,16 @@ function App() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-siem-dark flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`min-h-screen ${lastAlert ? 'tamper-flash bg-red-900/20' : 'bg-siem-dark'}`}>
+    <div className="min-h-screen bg-siem-dark">
       <div className="container mx-auto p-6">
         <header className="mb-8">
           <div className="flex items-center justify-between">
@@ -132,12 +71,6 @@ function App() {
               <p className="text-gray-400">SIEM Blockchain Control Room</p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className="text-sm text-gray-400">
-                  {connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
               <div className="px-4 py-2 bg-siem-card rounded-lg border border-siem-border">
                 <span className="text-2xl font-mono text-white">{logs.length}</span>
                 <span className="text-gray-400 ml-2">Blocks</span>
@@ -146,24 +79,8 @@ function App() {
           </div>
         </header>
 
-        {lastAlert && (
-          <div className="mb-6 p-4 bg-red-900/50 border border-red-600 rounded-lg animate-pulse">
-            <div className="flex items-center gap-3">
-              <span className="text-4xl">🚨</span>
-              <div>
-                <h2 className="text-xl font-bold text-red-400">TAMPER DETECTED</h2>
-                <p className="text-gray-300">Block ID: {lastAlert.tampered_block_id}</p>
-                <p className="text-sm text-gray-400">{lastAlert.details}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Detected at: {new Date(lastAlert.detected_at / 1e6).toLocaleTimeString()}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-3">
             <div className="bg-siem-card rounded-lg border border-siem-border overflow-hidden">
               <div className="p-4 border-b border-siem-border">
                 <h2 className="text-lg font-semibold text-white">Blockchain Ledger</h2>
@@ -197,33 +114,6 @@ function App() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="bg-siem-card rounded-lg border border-siem-border">
-              <div className="p-4 border-b border-siem-border">
-                <h2 className="text-lg font-semibold text-white">Alert History</h2>
-              </div>
-              <div className="max-h-[400px] overflow-y-auto p-4 space-y-3">
-                {alerts.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No alerts detected</p>
-                ) : (
-                  alerts.slice().reverse().map((alert, idx) => (
-                    <div key={idx} className="p-3 bg-red-900/20 border border-red-800 rounded-lg">
-                      <p className="text-red-400 font-semibold text-sm">
-                        Block #{alert.tampered_block_id}
-                      </p>
-                      <p className="text-gray-400 text-xs mt-1 truncate">
-                        {alert.details}
-                      </p>
-                      <p className="text-gray-500 text-xs mt-1">
-                        {new Date(alert.detected_at / 1e6).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           </div>
