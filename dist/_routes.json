@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "routes": [
-    { "pattern": "/api/*", "module": "worker" },
-    { "pattern": "/*", "bucket": "dist" }
-  ]
-}
