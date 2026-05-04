@@ -100,6 +100,8 @@ Watch the dashboard flash red when tampering is detected!
 | POST | `/api/log` | Submit a log entry |
 | POST | `/api/replica/log` | Accept a replicated block from a peer |
 | GET | `/api/logs` | Get all blocks |
+| GET | `/api/health` | Local node health and mode |
+| GET | `/api/peer-status` | Connectivity to configured peers |
 | WS | `/ws/alerts` | Real-time tamper alerts |
 
 ### Example Usage
@@ -112,6 +114,36 @@ curl -X POST http://localhost:8080/api/log \
 
 # Get all blocks
 curl http://localhost:8080/api/logs
+
+# Check local node health
+curl http://localhost:8080/api/health
+
+# Check whether this node can reach configured peers
+curl http://localhost:8080/api/peer-status
+```
+
+### Verify 2-PC Connection
+
+On the leader, start with replica peer configured:
+
+```bash
+./bin/sentinelchain --server http --port :8080 --peers http://REPLICA_IP:8080
+```
+
+On the replica, start read-only and bootstrap from leader:
+
+```bash
+./bin/sentinelchain --server http --port :8080 --read-only --bootstrap-from http://LEADER_IP:8080
+```
+
+Then validate from each side:
+
+```bash
+# From leader: should show connected_peers: 1 and reachable: true
+curl http://LEADER_IP:8080/api/peer-status
+
+# From replica: should return status ok and read_only true
+curl http://REPLICA_IP:8080/api/health
 ```
 
 ## Tamper Detection Latency

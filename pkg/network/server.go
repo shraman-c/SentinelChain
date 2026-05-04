@@ -183,6 +183,82 @@ func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (h *LogHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "ok",
+		"read_only": h.readOnly,
+		"peer_count": len(h.peers),
+	})
+}
+
+func (h *LogHandler) GetPeerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type peerStatus struct {
+		Peer       string `json:"peer"`
+		Reachable  bool   `json:"reachable"`
+		StatusCode int    `json:"status_code,omitempty"`
+		LatencyMs  int64  `json:"latency_ms"`
+		Error      string `json:"error,omitempty"`
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	statuses := make([]peerStatus, 0, len(h.peers))
+	connected := 0
+
+	for _, peer := range h.peers {
+		peer = strings.TrimSpace(peer)
+		if peer == "" {
+			continue
+		}
+
+		url := strings.TrimRight(peer, "/") + "/api/health"
+		start := time.Now()
+		resp, err := client.Get(url)
+		latency := time.Since(start).Milliseconds()
+
+		if err != nil {
+			statuses = append(statuses, peerStatus{
+				Peer:      peer,
+				Reachable: false,
+				LatencyMs: latency,
+				Error:     err.Error(),
+			})
+			continue
+		}
+
+		reachable := resp.StatusCode >= 200 && resp.StatusCode < 300
+		if reachable {
+			connected++
+		}
+
+		statuses = append(statuses, peerStatus{
+			Peer:       peer,
+			Reachable:  reachable,
+			StatusCode: resp.StatusCode,
+			LatencyMs:  latency,
+		})
+		resp.Body.Close()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"read_only":        h.readOnly,
+		"configured_peers": len(statuses),
+		"connected_peers":  connected,
+		"peers":            statuses,
+	})
+}
+
 type integrityWatcher struct {
 	db         *storage.DB
 	tamperChan chan *pb.TamperAlert
@@ -293,6 +369,8 @@ func StartHTTPServer(port string, db *storage.DB, tamperChan chan *pb.TamperAler
 
 	http.HandleFunc("/api/log", handler.SubmitLog)
 	http.HandleFunc("/api/logs", handler.GetLogs)
+	http.HandleFunc("/api/health", handler.GetHealth)
+	http.HandleFunc("/api/peer-status", handler.GetPeerStatus)
 	http.HandleFunc("/api/replica/log", handler.SubmitReplicaLog)
 	http.HandleFunc("/ws/alerts", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, tamperChan)
