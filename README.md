@@ -2,7 +2,7 @@
 
 A lightweight, private blockchain designed specifically for high-throughput SIEM log management and instant tamper detection.
 
-![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)
 ![SQLite](https://img.shields.io/badge/SQLite-Loaded-003B57?style=flat&logo=sqlite)
 
@@ -18,7 +18,7 @@ A lightweight, private blockchain designed specifically for high-throughput SIEM
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.25+
 - Node.js 18+
 - npm
 
@@ -40,12 +40,13 @@ cd frontend && npm install && cd ..
 
 **Terminal 1 - Start Backend:**
 ```bash
-./bin/sentinelchain.exe --server http --port :8080
+go build -o bin/sentinelchain ./cmd
+./bin/sentinelchain --server http --port :8080
 ```
 
 **Terminal 2 - Start Frontend:**
 ```bash
-cd frontend && npm run dev
+cd frontend && npm run dev:lan
 ```
 
 Visit http://localhost:3000 to see the dashboard.
@@ -54,7 +55,8 @@ Visit http://localhost:3000 to see the dashboard.
 
 ```bash
 # While server is running, run the tamper simulator
-./bin/tamper_simulator.exe
+go build -o bin/tamper_simulator ./cmd/tamper_simulator
+./bin/tamper_simulator
 ```
 
 Watch the dashboard flash red when tampering is detected!
@@ -96,6 +98,7 @@ Watch the dashboard flash red when tampering is detected!
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/log` | Submit a log entry |
+| POST | `/api/replica/log` | Accept a replicated block from a peer |
 | GET | `/api/logs` | Get all blocks |
 | WS | `/ws/alerts` | Real-time tamper alerts |
 
@@ -122,6 +125,24 @@ Latency:          ~101ms
 The integrity monitor checks every 500ms, so maximum detection latency is 500ms.
 
 ## Deployment
+
+## Two-PC Blockchain Setup
+
+Use one machine as the leader and the second as a read-only replica.
+
+Leader PC:
+
+```bash
+./bin/sentinelchain --server http --port :8080 --peers http://REPLICA_IP:8080
+```
+
+Replica PC:
+
+```bash
+./bin/sentinelchain --server http --port :8080 --read-only --bootstrap-from http://LEADER_IP:8080
+```
+
+The replica pulls the current chain from the leader at startup and then accepts replicated blocks on `/api/replica/log`. The leader keeps writing logs and broadcasts each new block to its peers.
 
 ### Railway (Backend)
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"sentinelchain/pkg/network"
@@ -22,7 +23,22 @@ func main() {
 
 	serverType := flag.String("server", "http", "Server type: http, tcp, or grpc")
 	port := flag.String("port", ":8080", "Server port")
+	peers := flag.String("peers", "", "Comma-separated peer base URLs to replicate to")
+	bootstrapFrom := flag.String("bootstrap-from", "", "Comma-separated peer base URLs to bootstrap from on startup")
+	readOnly := flag.Bool("read-only", false, "Reject direct log writes and only accept replicated blocks")
 	flag.Parse()
+
+	parsePeers := func(raw string) []string {
+		parts := strings.Split(raw, ",")
+		result := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		return result
+	}
 
 	log.Println("Initializing SentinelChain Database...")
 
@@ -41,6 +57,14 @@ func main() {
 		log.Fatalf("Failed to initialize genesis block: %v", err)
 	}
 
+	if bootstrapPeers := parsePeers(*bootstrapFrom); len(bootstrapPeers) > 0 {
+		log.Printf("Bootstrapping chain from peers: %v", bootstrapPeers)
+		if err := network.SyncFromPeers(db, bootstrapPeers); err != nil {
+			log.Fatalf("Failed to bootstrap chain from peers: %v", err)
+		}
+		log.Println("Chain bootstrap completed")
+	}
+
 	tamperChan := make(chan *pb.TamperAlert, 100)
 	go func() {
 		for alert := range tamperChan {
@@ -55,7 +79,7 @@ func main() {
 		switch *serverType {
 		case "http":
 			log.Printf("Starting HTTP server on %s", *port)
-			log.Fatal(network.StartHTTPServer(*port, db, tamperChan))
+			log.Fatal(network.StartHTTPServer(*port, db, tamperChan, parsePeers(*peers), *readOnly))
 		case "tcp":
 			log.Printf("Starting TCP server on %s", *port)
 			log.Fatal(network.StartTCPServer(*port, db, tamperChan))
@@ -66,6 +90,17 @@ func main() {
 
 	fmt.Println("Phase 2 & 3: gRPC/Network Server + Integrity Monitor")
 	fmt.Println("========================================================")
+	fmt.Printf("Mode: %s%s\n", func() string {
+		if *readOnly {
+			return "replica-only"
+		}
+		return "leader"
+	}(), func() string {
+		if *peers == "" {
+			return ""
+		}
+		return fmt.Sprintf(" | peers=%s", *peers)
+	}())
 	fmt.Println("Server running. Press Ctrl+C to stop.")
 	fmt.Println()
 

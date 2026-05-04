@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,30 +26,25 @@ var upgrader = websocket.Upgrader{
 type LogHandler struct {
 	db         *storage.DB
 	tamperChan chan *pb.TamperAlert
+	peers      []string
+	readOnly   bool
 	mu         sync.RWMutex
 }
 
-func NewLogHandler(db *storage.DB, tamperChan chan *pb.TamperAlert) *LogHandler {
+func NewLogHandler(db *storage.DB, tamperChan chan *pb.TamperAlert, peers []string, readOnly bool) *LogHandler {
 	return &LogHandler{
 		db:         db,
 		tamperChan: tamperChan,
+		peers:      peers,
+		readOnly:   readOnly,
 	}
 }
 
-func (h *LogHandler) SubmitLog(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req pb.LogRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
-		return
-	}
-
+func (h *LogHandler) applyLogRequest(req pb.LogRequest) (*storage.Block, error) {
 	block := &storage.Block{
 		LogTimestamp: req.Timestamp,
+		DeviceID:     req.DeviceID,
+		DeviceName:   req.DeviceName,
 		SourceIP:     req.SourceIP,
 		EventType:    req.EventType,
 		Severity:     req.Severity,
@@ -57,8 +53,7 @@ func (h *LogHandler) SubmitLog(w http.ResponseWriter, r *http.Request) {
 
 	lastBlock, err := h.db.GetLastBlock()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get last block: %v", err), http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("failed to get last block: %w", err)
 	}
 
 	if lastBlock != nil {
@@ -68,9 +63,68 @@ func (h *LogHandler) SubmitLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.InsertBlock(block); err != nil {
+		return nil, err
+	}
+
+	return block, nil
+}
+
+func (h *LogHandler) broadcastToPeers(block *storage.Block) {
+	for _, peer := range h.peers {
+		peer = strings.TrimSpace(peer)
+		if peer == "" {
+			continue
+		}
+
+		payload, err := json.Marshal(pb.LogRequest{
+			Timestamp:  block.LogTimestamp,
+			DeviceID:   block.DeviceID,
+			DeviceName: block.DeviceName,
+			SourceIP:   block.SourceIP,
+			EventType:  block.EventType,
+			Severity:   block.Severity,
+			Message:    block.Message,
+			PrevHash:   block.PrevHash,
+			Hash:       block.Hash,
+		})
+		if err != nil {
+			log.Printf("Failed to marshal replication payload: %v", err)
+			continue
+		}
+
+		url := strings.TrimRight(peer, "/") + "/api/replica/log"
+		resp, err := http.Post(url, "application/json", strings.NewReader(string(payload)))
+		if err != nil {
+			log.Printf("Failed to replicate block to %s: %v", peer, err)
+			continue
+		}
+		resp.Body.Close()
+	}
+}
+
+func (h *LogHandler) SubmitLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.readOnly {
+		http.Error(w, "Node is read-only", http.StatusForbidden)
+		return
+	}
+
+	var req pb.LogRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	block, err := h.applyLogRequest(req)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to insert block: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+		h.broadcastToPeers(block)
 
 	resp := pb.LogResponse{
 		Success: true,
@@ -95,25 +149,33 @@ func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type blockResponse struct {
-		ID        int64  `json:"id"`
-		Timestamp int64  `json:"timestamp"`
-		SourceIP  string `json:"source_ip"`
-		EventType string `json:"event_type"`
-		Severity  string `json:"severity"`
-		Message   string `json:"message"`
-		Hash      string `json:"hash"`
+		ID         int64  `json:"id"`
+		Timestamp  int64  `json:"timestamp"`
+		DeviceID   string `json:"device_id"`
+		DeviceName string `json:"device_name"`
+		SourceIP   string `json:"source_ip"`
+		EventType  string `json:"event_type"`
+		Severity   string `json:"severity"`
+		Message    string `json:"message"`
+		PrevHash   string `json:"prev_hash"`
+		Hash       string `json:"hash"`
+		InsertedAt int64  `json:"inserted_at"`
 	}
 
 	var response []blockResponse
 	for _, b := range blocks {
 		response = append(response, blockResponse{
-			ID:        b.ID,
-			Timestamp: b.LogTimestamp,
-			SourceIP:  b.SourceIP,
-			EventType: b.EventType,
-			Severity:  b.Severity,
-			Message:   b.Message,
-			Hash:      b.Hash,
+			ID:         b.ID,
+			Timestamp:  b.LogTimestamp,
+			DeviceID:   b.DeviceID,
+			DeviceName: b.DeviceName,
+			SourceIP:   b.SourceIP,
+			EventType:  b.EventType,
+			Severity:   b.Severity,
+			Message:    b.Message,
+			PrevHash:   b.PrevHash,
+			Hash:       b.Hash,
+			InsertedAt: b.InsertedAt,
 		})
 	}
 
@@ -176,6 +238,8 @@ func (iw *integrityWatcher) validateChain() {
 
 		computedHash := storage.ComputeHash(
 			prevBlock.LogTimestamp,
+			prevBlock.DeviceID,
+			prevBlock.DeviceName,
 			prevBlock.SourceIP,
 			prevBlock.EventType,
 			prevBlock.Severity,
@@ -199,6 +263,8 @@ func (iw *integrityWatcher) validateChain() {
 
 		currentComputedHash := storage.ComputeHash(
 			currentBlock.LogTimestamp,
+			currentBlock.DeviceID,
+			currentBlock.DeviceName,
 			currentBlock.SourceIP,
 			currentBlock.EventType,
 			currentBlock.Severity,
@@ -222,11 +288,12 @@ func (iw *integrityWatcher) validateChain() {
 	}
 }
 
-func StartHTTPServer(port string, db *storage.DB, tamperChan chan *pb.TamperAlert) error {
-	handler := NewLogHandler(db, tamperChan)
+func StartHTTPServer(port string, db *storage.DB, tamperChan chan *pb.TamperAlert, peers []string, readOnly bool) error {
+	handler := NewLogHandler(db, tamperChan, peers, readOnly)
 
 	http.HandleFunc("/api/log", handler.SubmitLog)
 	http.HandleFunc("/api/logs", handler.GetLogs)
+	http.HandleFunc("/api/replica/log", handler.SubmitReplicaLog)
 	http.HandleFunc("/ws/alerts", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, tamperChan)
 	})
@@ -313,6 +380,8 @@ func handleConnection(conn net.Conn, db *storage.DB, tamperChan chan *pb.TamperA
 
 	block := &storage.Block{
 		LogTimestamp: req.Timestamp,
+		DeviceID:     req.DeviceID,
+		DeviceName:   req.DeviceName,
 		SourceIP:     req.SourceIP,
 		EventType:    req.EventType,
 		Severity:     req.Severity,
@@ -344,4 +413,156 @@ func handleConnection(conn net.Conn, db *storage.DB, tamperChan chan *pb.TamperA
 
 	respBytes, _ := json.Marshal(resp)
 	conn.Write(respBytes)
+}
+
+func (h *LogHandler) SubmitReplicaLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req pb.LogRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.Hash == "" {
+		http.Error(w, "Missing block hash", http.StatusBadRequest)
+		return
+	}
+
+	exists, err := h.db.HasBlockHash(req.Hash)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to check existing block: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		resp := pb.LogResponse{
+			Success: true,
+			Hash:    req.Hash,
+			Message: "Replica block already exists",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	lastBlock, err := h.db.GetLastBlock()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read chain tip: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if lastBlock == nil {
+		if req.PrevHash != storage.GenesisPrevHash {
+			http.Error(w, "Replica block does not extend the genesis chain", http.StatusBadRequest)
+			return
+		}
+	} else if lastBlock.Hash != req.PrevHash {
+		http.Error(w, "Replica block does not extend the current chain tip", http.StatusBadRequest)
+		return
+	}
+
+	block := &storage.Block{
+		LogTimestamp: req.Timestamp,
+		DeviceID:     req.DeviceID,
+		DeviceName:   req.DeviceName,
+		SourceIP:     req.SourceIP,
+		EventType:    req.EventType,
+		Severity:     req.Severity,
+		Message:      req.Message,
+		PrevHash:     req.PrevHash,
+	}
+	if err := h.db.InsertBlockWithExpectedHash(block, req.Hash); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to replicate block: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp := pb.LogResponse{
+		Success: true,
+		Hash:    block.Hash,
+		Message: "Replica block accepted",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func SyncFromPeers(db *storage.DB, peers []string) error {
+	if len(peers) == 0 {
+		return nil
+	}
+
+	var lastHash string
+	lastBlock, err := db.GetLastBlock()
+	if err != nil {
+		return err
+	}
+	if lastBlock != nil {
+		lastHash = lastBlock.Hash
+	}
+
+	for _, peer := range peers {
+		peer = strings.TrimSpace(peer)
+		if peer == "" {
+			continue
+		}
+
+		url := strings.TrimRight(peer, "/") + "/api/logs"
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("Failed to sync from peer %s: %v", peer, err)
+			continue
+		}
+
+		var blocks []struct {
+			Timestamp  int64  `json:"timestamp"`
+			DeviceID   string `json:"device_id"`
+			DeviceName string `json:"device_name"`
+			SourceIP   string `json:"source_ip"`
+			EventType  string `json:"event_type"`
+			Severity   string `json:"severity"`
+			Message    string `json:"message"`
+			PrevHash   string `json:"prev_hash"`
+			Hash       string `json:"hash"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&blocks); err != nil {
+			resp.Body.Close()
+			log.Printf("Failed to decode peer chain from %s: %v", peer, err)
+			continue
+		}
+		resp.Body.Close()
+
+		for _, remoteBlock := range blocks {
+			exists, err := db.HasBlockHash(remoteBlock.Hash)
+			if err != nil {
+				return err
+			}
+			if exists {
+				lastHash = remoteBlock.Hash
+				continue
+			}
+
+			if lastHash != "" && remoteBlock.PrevHash != lastHash {
+				return fmt.Errorf("peer %s chain diverged at hash %s", peer, remoteBlock.Hash)
+			}
+
+			block := &storage.Block{
+				LogTimestamp: remoteBlock.Timestamp,
+				DeviceID:     remoteBlock.DeviceID,
+				DeviceName:   remoteBlock.DeviceName,
+				SourceIP:     remoteBlock.SourceIP,
+				EventType:    remoteBlock.EventType,
+				Severity:     remoteBlock.Severity,
+				Message:      remoteBlock.Message,
+				PrevHash:     remoteBlock.PrevHash,
+			}
+
+			if err := db.InsertBlockWithExpectedHash(block, remoteBlock.Hash); err != nil {
+				return err
+			}
+			lastHash = block.Hash
+		}
+	}
+
+	return nil
 }

@@ -2,10 +2,14 @@ package pb
 
 type LogRequest struct {
 	Timestamp int64  `json:"timestamp"`
+	DeviceID  string `json:"device_id"`
+	DeviceName string `json:"device_name"`
 	SourceIP  string `json:"source_ip"`
 	EventType string `json:"event_type"`
 	Severity  string `json:"severity"`
 	Message   string `json:"message"`
+	PrevHash   string `json:"prev_hash,omitempty"`
+	Hash       string `json:"hash,omitempty"`
 }
 
 type LogResponse struct {
