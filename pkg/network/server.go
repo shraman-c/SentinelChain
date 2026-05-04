@@ -221,7 +221,8 @@ func (h *LogHandler) GetPeerStatus(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		url := strings.TrimRight(peer, "/") + "/api/health"
+		base := strings.TrimRight(peer, "/")
+		url := base + "/api/health"
 		start := time.Now()
 		resp, err := client.Get(url)
 		latency := time.Since(start).Milliseconds()
@@ -237,6 +238,32 @@ func (h *LogHandler) GetPeerStatus(w http.ResponseWriter, r *http.Request) {
 		}
 
 		reachable := resp.StatusCode >= 200 && resp.StatusCode < 300
+		statusCode := resp.StatusCode
+		statusErr := ""
+
+		// Backward compatibility: older peers may not expose /api/health.
+		if !reachable && resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+
+			fallbackURL := base + "/api/logs"
+			fallbackStart := time.Now()
+			fallbackResp, fallbackErr := client.Get(fallbackURL)
+			latency = time.Since(start).Milliseconds() + time.Since(fallbackStart).Milliseconds()
+
+			if fallbackErr == nil {
+				statusCode = fallbackResp.StatusCode
+				reachable = fallbackResp.StatusCode >= 200 && fallbackResp.StatusCode < 300
+				if reachable {
+					statusErr = "peer missing /api/health; fallback /api/logs succeeded"
+				}
+				fallbackResp.Body.Close()
+			} else {
+				statusErr = fallbackErr.Error()
+			}
+		} else {
+			resp.Body.Close()
+		}
+
 		if reachable {
 			connected++
 		}
@@ -244,10 +271,10 @@ func (h *LogHandler) GetPeerStatus(w http.ResponseWriter, r *http.Request) {
 		statuses = append(statuses, peerStatus{
 			Peer:       peer,
 			Reachable:  reachable,
-			StatusCode: resp.StatusCode,
+			StatusCode: statusCode,
 			LatencyMs:  latency,
+			Error:      statusErr,
 		})
-		resp.Body.Close()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
