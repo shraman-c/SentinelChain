@@ -1,28 +1,52 @@
 # SentinelChain
 
-A lightweight, private blockchain designed specifically for high-throughput SIEM log management and instant tamper detection.
+> 🛡️ SentinelChain is a lightweight, private blockchain built for high-throughput SIEM log management with instant tamper detection. It provides cryptographic integrity for security logs, ensuring that any unauthorized modifications are detected in real-time through an immutable SHA-256 hash chain. Designed for enterprise security teams, SentinelChain combines a high-performance Go backend with a real-time React dashboard to monitor and protect critical log data from tampering.
 
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)
 ![SQLite](https://img.shields.io/badge/SQLite-Loaded-003B57?style=flat&logo=sqlite)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## Features
+---
 
-- **Cryptographic Integrity**: SHA-256 hashing creates an immutable chain of SIEM logs
-- **Instant Tamper Detection**: Background integrity monitor detects modifications within ~100-500ms
-- **Real-time Alerts**: WebSocket-powered live dashboard with visual tamper notifications
-- **High Performance**: Pure Go implementation with no external dependencies (no CGO)
-- **Lightweight**: Single SQLite database file for the entire blockchain
+## 🚀 Quick Navigation
 
-## Quick Start
+- [**Quick Start**](#-quick-start) - Get up and running in 5 minutes
+- [**API Endpoints**](#-api-endpoints) - Explore available endpoints
+- [**Architecture**](#-architecture) - Understand the system design
+- [**Two-PC Setup**](#-two-pc-blockchain-setup) - Deploy across multiple machines
+- [**Deployment**](#-deployment) - Deploy to cloud platforms
 
-### Prerequisites
+---
 
-- Go 1.25+
-- Node.js 18+
-- npm
+## ✨ Features
 
-### Installation
+<table>
+<tr>
+<td>🔐 <b>Cryptographic Integrity</b><br>SHA-256 hashing creates an immutable chain of SIEM logs</td>
+<td>⚡ <b>Instant Tamper Detection</b><br>Background integrity monitor detects modifications within ~100-500ms</td>
+</tr>
+<tr>
+<td>📡 <b>Real-time Alerts</b><br>WebSocket-powered live dashboard with visual tamper notifications</td>
+<td>🏎️ <b>High Performance</b><br>Pure Go implementation with no external dependencies (no CGO)</td>
+</tr>
+<tr>
+<td>💾 <b>Lightweight</b><br>Single SQLite database file for the entire blockchain</td>
+<td>🔗 <b>Two-PC Replication</b><br>Leader-replica architecture for distributed log management</td>
+</tr>
+</table>
+
+## 🚀 Quick Start
+
+### 📋 Prerequisites
+
+Ensure you have the following installed:
+
+- [Go 1.25+](https://go.dev/dl/)
+- [Node.js 18+](https://nodejs.org/)
+- [npm](https://www.npmjs.com/)
+
+### 📦 Installation
 
 ```bash
 # Clone the repository
@@ -36,22 +60,28 @@ go mod download
 cd frontend && npm install && cd ..
 ```
 
-### Running
+### ▶️ Running the Application
 
-**Terminal 1 - Start Backend:**
+<div>
+<b>Step 1:</b> Start the Backend (Terminal 1)
+</div>
+
 ```bash
 go build -o bin/sentinelchain ./cmd
 ./bin/sentinelchain --server http --port :8080
 ```
 
-**Terminal 2 - Start Frontend:**
+<div>
+<b>Step 2:</b> Start the Frontend (Terminal 2)
+</div>
+
 ```bash
 cd frontend && npm run dev:lan
 ```
 
-Visit http://localhost:3000 to see the dashboard.
+🌐 **Open your browser:** [http://localhost:3000](http://localhost:3000)
 
-### Testing Tamper Detection
+### 🧪 Testing Tamper Detection
 
 ```bash
 # While server is running, run the tamper simulator
@@ -59,9 +89,12 @@ go build -o bin/tamper_simulator ./cmd/tamper_simulator
 ./bin/tamper_simulator
 ```
 
-Watch the dashboard flash red when tampering is detected!
+👀 Watch the dashboard flash red when tampering is detected!
 
-## Architecture
+## 🏗️ Architecture
+
+<details>
+<summary><b>Click to expand architecture diagram</b></summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -93,18 +126,21 @@ Watch the dashboard flash red when tampering is detected!
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## API Endpoints
+</details>
+
+## 🔌 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/log` | Submit a log entry |
-| POST | `/api/replica/log` | Accept a replicated block from a peer |
-| GET | `/api/logs` | Get all blocks |
-| GET | `/api/health` | Local node health and mode |
-| GET | `/api/peer-status` | Connectivity to configured peers |
-| WS | `/ws/alerts` | Real-time tamper alerts |
+| `POST` | `/api/log` | Submit a log entry |
+| `POST` | `/api/replica/log` | Accept a replicated block from a peer |
+| `GET` | `/api/logs` | Get all blocks |
+| `GET` | `/api/health` | Local node health and mode |
+| `GET` | `/api/peer-status` | Connectivity to configured peers |
+| `WS` | `/ws/alerts` | Real-time tamper alerts |
 
-### Example Usage
+<details>
+<summary><b>📝 View Example Usage</b></summary>
 
 ```bash
 # Submit a log
@@ -122,7 +158,10 @@ curl http://localhost:8080/api/health
 curl http://localhost:8080/api/peer-status
 ```
 
-### Verify 2-PC Connection
+</details>
+
+<details>
+<summary><b>🔗 Verify 2-PC Connection</b></summary>
 
 On the leader, start with replica peer configured:
 
@@ -145,6 +184,8 @@ curl http://LEADER_IP:8080/api/peer-status
 # From replica: should return status ok and read_only true
 curl http://REPLICA_IP:8080/api/health
 ```
+
+</details>
 
 ## Tamper Detection Latency
 
@@ -231,6 +272,35 @@ SentinelChain/
 - **Frontend**: React 18, Vite, Tailwind CSS 4, TypeScript
 - **Real-time**: Gorilla WebSocket
 
-## License
+## 📄 License
 
-MIT
+This project is licensed under the MIT License - see below for details:
+
+<details>
+<summary><b>View MIT License</b></summary>
+
+```
+MIT License
+
+Copyright (c) 2026 Shraman Chaudhuri
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
