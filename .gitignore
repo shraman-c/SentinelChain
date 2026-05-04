@@ -37,5 +37,5 @@ Thumbs.db
 # Wrangler
 .wrangler/
 *.jsonc
-
+DEPLOY_CLOUDFLARE.md
 # Frontend build output is handled in frontend/.gitignore
