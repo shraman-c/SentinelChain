@@ -10,4 +10,32 @@
 /go1.26.0.linux-amd64.tar.gz.1
 /go1.26.0.linux-amd64.tar.gz.2
 
+# Dependencies
+/node_modules/
+/vendor/
+
+# Build outputs
+/dist/
+/src/ 
+/build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wrangler
+.wrangler/
+*.jsonc
+
 # Frontend build output is handled in frontend/.gitignore

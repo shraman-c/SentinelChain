@@ -5,6 +5,7 @@
     "build": "cd frontend && npm install && npm run build"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.3",
     "@cloudflare/workers-types": "^4.20260316.1"
   }
 }
